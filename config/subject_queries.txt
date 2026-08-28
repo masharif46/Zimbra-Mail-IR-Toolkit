@@ -1,0 +1,11 @@
+# One zmmailbox query per line
+subject:"Service $("
+subject:"Service ;curl"
+subject:"Service $(curl"
+subject:"Service $(wget"
+subject:"/dev/tcp/"
+subject:"nohup setsid"
+subject:"zmslapcat"
+subject:"zmswatchctl restart"
+subject:"/opt/zimbra/jetty"
+subject:"/opt/zimbra/jetty_base"

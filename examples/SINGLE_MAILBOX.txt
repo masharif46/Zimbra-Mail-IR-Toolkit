@@ -1,0 +1,22 @@
+Single mailbox scan
+
+./bin/scan_all.sh \
+  --account itlead@example.com \
+  --start 2026-08-20 \
+  --end 2026-08-29 \
+  --delay 0.02
+
+All-time single mailbox:
+
+./bin/scan_all.sh \
+  --account itlead@example.com \
+  --all-time \
+  --delay 0.02
+
+Single mailbox plus known IOC search:
+
+./bin/scan_all.sh \
+  --account itlead@example.com \
+  --start 2026-08-20 \
+  --end 2026-08-29 \
+  --ioc-search

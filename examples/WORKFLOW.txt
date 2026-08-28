@@ -1,0 +1,20 @@
+1. Scan
+./bin/scan_all.sh --start 2026-08-20 --end 2026-08-29 --delay 0.02
+
+2. Copy review file
+cp /tmp/zimbra-mail-ir-*/review_candidates.csv ./reviewed_candidates.csv
+
+3. Review in Excel
+Set decision to REVIEW, KEEP, or DELETE.
+
+4. Validate
+./bin/validate_review.py reviewed_candidates.csv
+
+5. Dry run
+./bin/delete_reviewed.py reviewed_candidates.csv
+
+6. Approved execution
+./bin/delete_reviewed.py reviewed_candidates.csv \
+  --execute \
+  --confirm DELETE_REVIEWED_MESSAGES \
+  --evidence-dir /root/zimbra-ir/mail-removal-approved
