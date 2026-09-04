@@ -60,6 +60,14 @@ def safe_header(value, limit):
     return str(value or "").replace("\r", " ").replace("\n", " ")[:limit]
 
 
+def safe_message_header(msg, name):
+    """Read a header without letting Python 3.6's lazy parser abort a scan."""
+    try:
+        return msg.get(name)
+    except Exception:
+        return None
+
+
 def percent_bad_bytes(data):
     if not data:
         return 0.0, 0.0
@@ -275,7 +283,12 @@ def main():
                 continue
 
             defects = defect_names(msg)
-            missing = [h for h in KEY_HEADERS if msg.get(h) is None]
+            # Header values are parsed lazily by email.policy.default. Some
+            # malformed address headers can raise here even after parsebytes()
+            # has returned a message object. Treat those headers as unusable
+            # and continue scanning the remaining blobs.
+            missing = [h for h in KEY_HEADERS
+                       if safe_message_header(msg, h) is None]
             missing_count = len(missing)
 
             # Explicit raw-blob corruption detector.
@@ -380,15 +393,15 @@ def main():
                     "text_parts": text_parts,
                     "size_bytes": size_bytes,
                     "parsed_size_bytes": len(parse_data),
-                    "date": safe_header(msg.get("Date", ""), 160),
-                    "from": safe_header(msg.get("From", ""), 240),
-                    "to": safe_header(msg.get("To", ""), 240),
-                    "subject": safe_header(msg.get("Subject", ""), 320),
+                    "date": safe_header(safe_message_header(msg, "Date"), 160),
+                    "from": safe_header(safe_message_header(msg, "From"), 240),
+                    "to": safe_header(safe_message_header(msg, "To"), 240),
+                    "subject": safe_header(safe_message_header(msg, "Subject"), 320),
                     "message_id_header": safe_header(
-                        msg.get("Message-ID", ""), 320
+                        safe_message_header(msg, "Message-ID"), 320
                     ),
                     "content_type": safe_header(
-                        msg.get("Content-Type", ""), 200
+                        safe_message_header(msg, "Content-Type"), 200
                     ),
                     "path": path,
                     "sha256": blob["sha256"],
