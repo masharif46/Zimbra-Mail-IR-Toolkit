@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2.2 maintenance update
+- Added bounded timeouts for evidence export and message deletion; a hung
+  Zimbra CLI command is recorded as a failure instead of stopping the run.
 - Fixed `delete_reviewed.py` for Python 3.6 (`universal_newlines=True`).
 - Removed use of `Path.unlink(missing_ok=True)` for Python 3.6 compatibility.
 - If `--evidence-dir` already exists, a unique `-01`, `-02`, ... directory is created automatically.

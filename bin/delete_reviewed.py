@@ -28,14 +28,25 @@ def command_as_zimbra(program, *args):
 
     raise RuntimeError("run as root or zimbra")
 
-def run_zimbra(program, *args):
-    return subprocess.run(
-        command_as_zimbra(program, *args),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        check=False,
-    )
+def run_zimbra(program, *args, timeout=60):
+    """Run a Zimbra CLI command without allowing it to hang forever."""
+    try:
+        return subprocess.run(
+            command_as_zimbra(program, *args),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", "replace")
+        output = (output + " COMMAND_TIMEOUT").strip()
+        return subprocess.CompletedProcess(
+            command_as_zimbra(program, *args), 124, output
+        )
 
 def get_mailbox_id(account):
     p = run_zimbra("zmprov", "gmi", account)
@@ -101,6 +112,10 @@ def main():
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--confirm", default="")
     ap.add_argument("--evidence-dir", default="")
+    ap.add_argument(
+        "--timeout", type=float, default=60,
+        help="maximum seconds per Zimbra command (default: 60)",
+    )
     args = ap.parse_args()
 
     if args.execute and args.confirm != CONFIRM:
@@ -215,7 +230,8 @@ def main():
                 )
                 with open(eml, "wb") as out:
                     export = subprocess.run(
-                        cmd, stdout=out, stderr=subprocess.PIPE, check=False
+                        cmd, stdout=out, stderr=subprocess.PIPE, check=False,
+                        timeout=args.timeout,
                     )
                 if export.returncode == 0 and eml.exists():
                     eml_sha = sha256_file(eml)
@@ -225,7 +241,10 @@ def main():
                 safe_unlink(eml)
 
             # Mailbox change happens only here, after validation/evidence attempts.
-            result = run_zimbra("zmmailbox", "-z", "-m", account, "dm", msgid)
+            result = run_zimbra(
+                "zmmailbox", "-z", "-m", account, "dm", msgid,
+                timeout=args.timeout,
+            )
 
             writer.writerow({
                 "account": account,

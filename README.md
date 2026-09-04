@@ -296,6 +296,15 @@ After review/change approval:
   --evidence-dir /root/zimbra-ir/mail-removal-approved
 ```
 
+Each Zimbra CLI operation has a 60-second timeout by default. A different
+limit can be selected with `--timeout SECONDS`; timed-out operations are
+recorded as failures and processing continues with the next approved row:
+
+```bash
+./bin/delete_reviewed.py reviewed_candidates.csv \
+  --execute --confirm DELETE_REVIEWED_MESSAGES --timeout 120
+```
+
 If running as `zimbra`, choose an evidence directory writable by `zimbra`.
 
 Before each removal the tool attempts to preserve:
