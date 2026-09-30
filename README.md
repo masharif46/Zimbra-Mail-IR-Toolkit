@@ -308,6 +308,21 @@ the terminal:
   --batch-size 200
 ```
 
+```bash
+sed -i 's/\r$//' bin/delete_reviewed.py
+chmod +x bin/delete_reviewed.py
+```
+
+```bash
+python3 ./bin/delete_reviewed.py reviewed_candidates.csv \
+  --execute \
+  --confirm DELETE_REVIEWED_MESSAGES \
+  --evidence-dir /opt/Zimbra-Mail-IR-Toolkit/mail-removal-approved \
+  --timeout 60 \
+  --batch-size 200
+```
+
+
 `--batch-size` defaults to `200`. The tool reports selected-row totals,
 validation progress, batch progress, per-message results, and the completed
 evidence directory. Mailbox-ID lookups are cached per account to avoid
