@@ -296,6 +296,29 @@ After review/change approval:
   --evidence-dir /root/zimbra-ir/mail-removal-approved
 ```
 
+For large review files, process messages in batches and show live progress in
+the terminal:
+
+```bash
+./bin/delete_reviewed.py reviewed_candidates.csv \
+  --execute \
+  --confirm DELETE_REVIEWED_MESSAGES \
+  --evidence-dir /root/zimbra-ir/mail-removal-approved \
+  --timeout 120 \
+  --batch-size 200
+```
+
+`--batch-size` defaults to `200`. The tool reports selected-row totals,
+validation progress, batch progress, per-message results, and the completed
+evidence directory. Mailbox-ID lookups are cached per account to avoid
+repeating the same validation command for every message in that mailbox.
+
+For very large files, first test with a small reviewed CSV and confirm the
+deletion rate, evidence storage, and `removal_log.csv` output. Batching limits
+the amount of work handled in one group, but the complete operation can still
+be lengthy because each message is preserved, exported where possible, and
+removed through Zimbra CLI commands.
+
 Each Zimbra CLI operation has a 60-second timeout by default. A different
 limit can be selected with `--timeout SECONDS`; timed-out operations are
 recorded as failures and processing continues with the next approved row:

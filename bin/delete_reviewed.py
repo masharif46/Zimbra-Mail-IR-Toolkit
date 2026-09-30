@@ -116,7 +116,15 @@ def main():
         "--timeout", type=float, default=60,
         help="maximum seconds per Zimbra command (default: 60)",
     )
+    ap.add_argument(
+        "--batch-size", type=int, default=200,
+        help="messages per deletion batch (default: 200)",
+    )
     args = ap.parse_args()
+
+    if args.batch_size < 1:
+        print("ERROR: --batch-size must be at least 1", file=sys.stderr)
+        return 2
 
     if args.execute and args.confirm != CONFIRM:
         print(f"ERROR: use --confirm {CONFIRM}", file=sys.stderr)
@@ -141,8 +149,11 @@ def main():
     print(f"Rows marked DELETE: {len(selected)}")
     validated = []
     problems = []
+    mailbox_cache = {}
+    total_selected = len(selected)
 
-    for row in selected:
+    print(f"Validation started: 0/{total_selected} rows", flush=True)
+    for index, row in enumerate(selected, 1):
         account = row.get("account", "").strip()
         expected = row.get("mailbox_id", "").strip()
         msgid = row.get("message_id", "").strip()
@@ -157,7 +168,9 @@ def main():
             problems.append(f"{account}/{msgid!r}: invalid message ID")
             continue
 
-        actual = get_mailbox_id(account)
+        if account not in mailbox_cache:
+            mailbox_cache[account] = get_mailbox_id(account)
+        actual = mailbox_cache[account]
         if actual is None:
             problems.append(f"{account}/{msgid}: cannot obtain current mailbox ID")
             continue
@@ -167,6 +180,14 @@ def main():
             )
             continue
         validated.append(row)
+
+        if index == 1 or index % 1000 == 0 or index == total_selected:
+            print(
+                f"Validation progress: {index}/{total_selected} "
+                f"({index * 100 / total_selected:.1f}%), "
+                f"valid={len(validated)}, problems={len(problems)}",
+                flush=True,
+            )
 
     if problems:
         print("\nBLOCKED. No mailbox changes were made:")
@@ -195,77 +216,105 @@ def main():
         "delete_returncode", "delete_output"
     ]
 
+    total_validated = len(validated)
+    total_batches = (total_validated + args.batch_size - 1) // args.batch_size
+
+    print(
+        f"Deletion started: {total_validated} messages in "
+        f"{total_batches} batch(es) of up to {args.batch_size}",
+        flush=True,
+    )
+
     with open(evidence / "removal_log.csv", "w", newline="", encoding="utf-8") as lf:
         writer = csv.DictWriter(lf, fieldnames=log_fields)
         writer.writeheader()
 
-        for row in validated:
-            account = row["account"].strip()
-            msgid = row["message_id"].strip()
-            source = row.get("path", "").strip()
-
-            itemdir = evidence / f"{safe_name(account)}__msg_{safe_name(msgid)}"
-            itemdir.mkdir(mode=0o700)
-
-            source_sha = row.get("sha256", "").strip()
-            copied = ""
-            copied_sha = ""
-
-            if source and os.path.isfile(source):
-                try:
-                    source_sha = sha256_file(source)
-                    dest = itemdir / Path(source).name
-                    shutil.copy2(source, dest)
-                    copied = str(dest)
-                    copied_sha = sha256_file(dest)
-                except Exception as exc:
-                    copied = "COPY_FAILED: " + str(exc)
-
-            eml = itemdir / f"{msgid}.eml"
-            eml_sha = ""
-            try:
-                cmd = command_as_zimbra(
-                    "zmmailbox", "-z", "-m", account,
-                    "-t", "0", "getRestURL", f"//?id={msgid}"
-                )
-                with open(eml, "wb") as out:
-                    export = subprocess.run(
-                        cmd, stdout=out, stderr=subprocess.PIPE, check=False,
-                        timeout=args.timeout,
-                    )
-                if export.returncode == 0 and eml.exists():
-                    eml_sha = sha256_file(eml)
-                else:
-                    safe_unlink(eml)
-            except Exception:
-                safe_unlink(eml)
-
-            # Mailbox change happens only here, after validation/evidence attempts.
-            result = run_zimbra(
-                "zmmailbox", "-z", "-m", account, "dm", msgid,
-                timeout=args.timeout,
+        for batch_number, batch_start in enumerate(
+            range(0, total_validated, args.batch_size), 1
+        ):
+            batch = validated[batch_start:batch_start + args.batch_size]
+            print(
+                f"Batch {batch_number}/{total_batches} started "
+                f"({len(batch)} messages)",
+                flush=True,
             )
 
-            writer.writerow({
-                "account": account,
-                "mailbox_id": row["mailbox_id"],
-                "message_id": msgid,
-                "subject": row.get("subject", ""),
-                "source_path": source,
-                "source_sha256": source_sha,
-                "copied_blob": copied,
-                "copied_blob_sha256": copied_sha,
-                "eml_export": str(eml) if eml.exists() else "",
-                "eml_sha256": eml_sha,
-                "delete_returncode": result.returncode,
-                "delete_output": (result.stdout or "").replace("\r", " ").replace("\n", " ")[:1000],
-            })
-            lf.flush()
+            for batch_index, row in enumerate(batch, 1):
+                account = row["account"].strip()
+                msgid = row["message_id"].strip()
+                source = row.get("path", "").strip()
 
-            if result.returncode == 0:
-                print(f"REMOVAL COMMAND OK: {account} message={msgid}")
-            else:
-                print(f"REMOVAL COMMAND FAILED: {account} message={msgid}")
+                itemdir = evidence / f"{safe_name(account)}__msg_{safe_name(msgid)}"
+                itemdir.mkdir(mode=0o700)
+
+                source_sha = row.get("sha256", "").strip()
+                copied = ""
+                copied_sha = ""
+
+                if source and os.path.isfile(source):
+                    try:
+                        source_sha = sha256_file(source)
+                        dest = itemdir / Path(source).name
+                        shutil.copy2(source, dest)
+                        copied = str(dest)
+                        copied_sha = sha256_file(dest)
+                    except Exception as exc:
+                        copied = "COPY_FAILED: " + str(exc)
+
+                eml = itemdir / f"{msgid}.eml"
+                eml_sha = ""
+                try:
+                    cmd = command_as_zimbra(
+                        "zmmailbox", "-z", "-m", account,
+                        "-t", "0", "getRestURL", f"//?id={msgid}"
+                    )
+                    with open(eml, "wb") as out:
+                        export = subprocess.run(
+                            cmd, stdout=out, stderr=subprocess.PIPE, check=False,
+                            timeout=args.timeout,
+                        )
+                    if export.returncode == 0 and eml.exists():
+                        eml_sha = sha256_file(eml)
+                    else:
+                        safe_unlink(eml)
+                except Exception:
+                    safe_unlink(eml)
+
+            # Mailbox change happens only here, after validation/evidence attempts.
+                result = run_zimbra(
+                    "zmmailbox", "-z", "-m", account, "dm", msgid,
+                    timeout=args.timeout,
+                )
+
+                writer.writerow({
+                    "account": account,
+                    "mailbox_id": row["mailbox_id"],
+                    "message_id": msgid,
+                    "subject": row.get("subject", ""),
+                    "source_path": source,
+                    "source_sha256": source_sha,
+                    "copied_blob": copied,
+                    "copied_blob_sha256": copied_sha,
+                    "eml_export": str(eml) if eml.exists() else "",
+                    "eml_sha256": eml_sha,
+                    "delete_returncode": result.returncode,
+                    "delete_output": (result.stdout or "").replace("\r", " ").replace("\n", " ")[:1000],
+                })
+                lf.flush()
+
+                completed = batch_start + batch_index
+                if result.returncode == 0:
+                    outcome = "OK"
+                else:
+                    outcome = "FAILED"
+                print(
+                    f"Progress: {completed}/{total_validated} "
+                    f"({completed * 100 / total_validated:.1f}%) "
+                    f"{outcome}: {account} message={msgid}",
+                    flush=True,
+                )
+
+            print(f"Batch {batch_number}/{total_batches} completed", flush=True)
 
     print(f"\nEvidence/log directory: {evidence}")
     return 0
