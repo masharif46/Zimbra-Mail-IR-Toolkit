@@ -275,6 +275,35 @@ Validate after editing:
 ./bin/validate_review.py reviewed_candidates.csv
 ```
 
+### Remove duplicate message rows
+
+Before deletion, remove duplicate rows that refer to the same message. A message
+is identified by the combination of `account` and `message_id`; `message_id`
+alone is not guaranteed to be unique across mailboxes.
+
+Create a cleaned copy while preserving the first occurrence of each message:
+
+```bash
+python3 ./bin/clean_reviewed.py reviewed_candidates.csv
+```
+
+The script creates `reviewed_candidates_clean.csv` and reports the number of
+duplicate rows removed. You can choose another output path with `--output`:
+
+```bash
+python3 ./bin/clean_reviewed.py reviewed_candidates.csv \
+  --output reviewed_candidates_clean.csv
+```
+
+Validate the cleaned file before using it for removal:
+
+```bash
+./bin/validate_review.py reviewed_candidates_clean.csv
+```
+
+Use the cleaned CSV for both the dry run and the approved removal. Keep the
+original CSV as an unchanged review record.
+
 ## Dry-run removal
 
 ```bash
